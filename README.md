@@ -53,90 +53,83 @@ Launch the application using demo.launch(share=True) to generate a public link f
 ### PROGRAM:
 ```
 import os
-import io
-from IPython.display import Image, display, HTML
-from PIL import Image
-import base64 
-from dotenv import load_dotenv, find_dotenv
-_ = load_dotenv(find_dotenv()) # read local .env file
-hf_api_key = os.environ['HF_API_KEY']
-
-# Helper function
-import requests, json
-
-#Summarization endpoint
-def get_completion(inputs, parameters=None,ENDPOINT_URL=os.environ['HF_API_SUMMARY_BASE']): 
-    headers = {
-      "Authorization": f"Bearer {hf_api_key}",
-      "Content-Type": "application/json"
-    }
-    data = { "inputs": inputs }
-    if parameters is not None:
-        data.update({"parameters": parameters})
-    response = requests.request("POST",
-                                ENDPOINT_URL, headers=headers,
-                                data=json.dumps(data)
-                               )
-    return json.loads(response.content.decode("utf-8"))
-
-API_URL = os.environ['HF_API_NER_BASE'] #NER endpoint
-text = "My name is Andrew, I'm building DeepLearningAI and I live in California"
-get_completion(text, parameters=None, ENDPOINT_URL= API_URL)
-
+import json
+import requests
 import gradio as gr
-def ner(input):
-    output = get_completion(input, parameters=None, ENDPOINT_URL=API_URL)
-    return {"text": input, "entities": output}
+from dotenv import load_dotenv, find_dotenv
 
-gr.close_all()
-demo = gr.Interface(fn=ner,
-                    inputs=[gr.Textbox(label="Text to find entities", lines=2)],
-                    outputs=[gr.HighlightedText(label="Text with entities")],
-                    title="NER with dslim/bert-base-NER",
-                    description="Find entities using the `dslim/bert-base-NER` model under the hood!",
-                    allow_flagging="never",
-                    #Here we introduce a new tag, examples, easy to use examples for your application
-                    examples=["My name is Andrew and I live in California", "My name is Poli and work at HuggingFace"])
-demo.launch(share=True, server_port=int(os.environ['PORT4']))
+_ = load_dotenv(find_dotenv())
+hf_api_key = os.environ['HF_API_KEY']
+API_URL = os.environ['HF_API_NER_BASE']
+
+def get_completion(inputs, parameters=None, ENDPOINT_URL=API_URL):
+    headers = {
+        "Authorization": f"Bearer {hf_api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {"inputs": inputs}
+    if parameters:
+        data.update({"parameters": parameters})
+
+    response = requests.post(ENDPOINT_URL, headers=headers, data=json.dumps(data))
+    text = response.content.decode("utf-8").strip()
+
+    # Handle extra data safely
+    try:
+        # Try parsing as normal JSON
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # If response contains multiple JSON objects, take the first valid one
+        parts = text.split("\n")
+        for part in parts:
+            try:
+                return json.loads(part)
+            except Exception:
+                continue
+        raise ValueError(f"Invalid JSON returned from model: {text}")
 
 def merge_tokens(tokens):
     merged_tokens = []
     for token in tokens:
         if merged_tokens and token['entity'].startswith('I-') and merged_tokens[-1]['entity'].endswith(token['entity'][2:]):
-            # If current token continues the entity of the last one, merge them
-            last_token = merged_tokens[-1]
-            last_token['word'] += token['word'].replace('##', '')
-            last_token['end'] = token['end']
-            last_token['score'] = (last_token['score'] + token['score']) / 2
+            last = merged_tokens[-1]
+            last['word'] += token['word'].replace('##', '')
+            last['end'] = token['end']
+            last['score'] = (last['score'] + token['score']) / 2
         else:
-            # Otherwise, add the token to the list
             merged_tokens.append(token)
-
     return merged_tokens
 
-def ner(input):
-    output = get_completion(input, parameters=None, ENDPOINT_URL=API_URL)
+def ner(input_text):
+    output = get_completion(input_text)
+    if not isinstance(output, list):
+        raise ValueError(f"Unexpected model output: {output}")
     merged_tokens = merge_tokens(output)
-    return {"text": input, "entities": merged_tokens}
+    return {"text": input_text, "entities": merged_tokens}
 
 gr.close_all()
-demo = gr.Interface(fn=ner,
-                    inputs=[gr.Textbox(label="Text to find entities", lines=2)],
-                    outputs=[gr.HighlightedText(label="Text with entities")],
-                    title="NER with dslim/bert-base-NER",
-                    description="Find entities using the `dslim/bert-base-NER` model under the hood!",
-                    allow_flagging="never",
-                    examples=["My name is Andrew, I'm building DeeplearningAI and I live in California", "My name is Poli, I live in Vienna and work at HuggingFace"])
+demo = gr.Interface(
+    fn=ner,
+    inputs=[gr.Textbox(label="Text to find entities", lines=2)],
+    outputs=[gr.HighlightedText(label="Text with entities")],
+    title="NER with dslim/bert-base-NER",
+    description="Find named entities using the dslim/bert-base-NER model via Hugging Face Inference API.",
+    allow_flagging="never",
+    examples=[
+        "My name is KARTHIK PADMANABAN R , works at HuggingFace in Chennai."
+    ]
+)
 
-demo.launch(share=True, server_port=int(os.environ['PORT4']))
+demo.launch(share=True, server_port=int(os.environ.get("PORT3",7860)))
 
 ```
 
 ### OUTPUT:
 
-<img width="1351" height="765" alt="Screenshot 2025-10-31 113443" src="https://github.com/user-attachments/assets/7edafbce-3e2e-4fb5-b9c4-e2bd4614a4f6" />
+<img width="754" height="1010" alt="Screenshot 2025-11-26 091550" src="https://github.com/user-attachments/assets/ae6f0dfb-dde7-4e46-9321-2c2f21526995" />
 
-<img width="1314" height="775" alt="Screenshot 2025-10-31 113456" src="https://github.com/user-attachments/assets/0e1af52a-8a6f-4700-9cad-9e4850028f96" />
+<img width="856" height="364" alt="Screenshot 2025-11-26 091603" src="https://github.com/user-attachments/assets/b4616657-ed18-4d72-8f28-e114c91281ef" />
+
 
 ### RESULT:
 
